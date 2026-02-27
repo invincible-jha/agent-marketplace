@@ -30,7 +30,6 @@ import re
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any
 
 import yaml
 
@@ -62,8 +61,8 @@ class MCPToolDefinition:
 
     name: str
     description: str
-    input_schema: dict[str, Any]
-    output_schema: dict[str, Any] | None = None
+    input_schema: dict[str, object]
+    output_schema: dict[str, object] | None = None
     auth_required: bool = False
     tags: list[str] = field(default_factory=list)
 
@@ -102,8 +101,8 @@ class MCPServerInfo:
     version: str
     transport: str
     tools: list[MCPToolDefinition]
-    resources: list[dict[str, Any]]
-    prompts: list[dict[str, Any]]
+    resources: list[dict[str, object]]
+    prompts: list[dict[str, object]]
     scanned_at: datetime
 
     def __post_init__(self) -> None:
@@ -159,7 +158,7 @@ class MCPScanner:
     # Public API
     # ------------------------------------------------------------------
 
-    def scan_definition(self, definition: dict[str, Any]) -> MCPServerInfo:
+    def scan_definition(self, definition: dict[str, object]) -> MCPServerInfo:
         """Parse a single MCP server definition dict into ``MCPServerInfo``.
 
         The *definition* dict is one entry from a ``mcpServers`` mapping or
@@ -187,11 +186,11 @@ class MCPScanner:
         version: str = definition.get("version", "unknown")
         transport: str = self._extract_transport(definition)
 
-        raw_tools: list[dict[str, Any]] = definition.get("tools", [])
+        raw_tools: list[dict[str, object]] = definition.get("tools", [])
         tools = [self._parse_tool(t) for t in raw_tools if isinstance(t, dict)]
 
-        resources: list[dict[str, Any]] = definition.get("resources", [])
-        prompts: list[dict[str, Any]] = definition.get("prompts", [])
+        resources: list[dict[str, object]] = definition.get("resources", [])
+        prompts: list[dict[str, object]] = definition.get("prompts", [])
 
         return MCPServerInfo(
             server_name=server_name,
@@ -236,7 +235,7 @@ class MCPScanner:
 
         try:
             if path.suffix.lower() in {".yaml", ".yml"}:
-                data: Any = yaml.safe_load(raw_text)
+                data: object = yaml.safe_load(raw_text)
             else:
                 try:
                     data = json.loads(raw_text)
@@ -247,7 +246,7 @@ class MCPScanner:
 
         return self._extract_servers(data)
 
-    def extract_capabilities(self, server: MCPServerInfo) -> list[dict[str, Any]]:
+    def extract_capabilities(self, server: MCPServerInfo) -> list[dict[str, object]]:
         """Extract capability metadata dicts from a scanned ``MCPServerInfo``.
 
         Each dict in the returned list has the shape::
@@ -270,10 +269,10 @@ class MCPScanner:
 
         Returns
         -------
-        list[dict[str, Any]]
+        list[dict[str, object]]
             One entry per tool.  Empty when the server has no tools.
         """
-        capabilities: list[dict[str, Any]] = []
+        capabilities: list[dict[str, object]] = []
         for tool in server.tools:
             capabilities.append(
                 {
@@ -333,7 +332,7 @@ class MCPScanner:
     # Private helpers
     # ------------------------------------------------------------------
 
-    def _extract_servers(self, data: Any) -> list[MCPServerInfo]:
+    def _extract_servers(self, data: object) -> list[MCPServerInfo]:
         """Dispatch on the top-level data shape and return all server infos."""
         if data is None:
             return []
@@ -372,7 +371,7 @@ class MCPScanner:
 
         return []
 
-    def _scan_named(self, name: str, definition: dict[str, Any]) -> MCPServerInfo:
+    def _scan_named(self, name: str, definition: dict[str, object]) -> MCPServerInfo:
         """Scan a server definition that has an explicit name key."""
         enriched = dict(definition)
         if "name" not in enriched and "server_name" not in enriched:
@@ -380,7 +379,7 @@ class MCPScanner:
         return self.scan_definition(enriched)
 
     @staticmethod
-    def _extract_transport(definition: dict[str, Any]) -> str:
+    def _extract_transport(definition: dict[str, object]) -> str:
         """Infer the transport mechanism from the server definition."""
         transport = definition.get("transport", "")
         if transport:
@@ -400,12 +399,12 @@ class MCPScanner:
         return "stdio"
 
     @staticmethod
-    def _parse_tool(raw: dict[str, Any]) -> MCPToolDefinition:
+    def _parse_tool(raw: dict[str, object]) -> MCPToolDefinition:
         """Convert a raw tool dict from the config into an ``MCPToolDefinition``."""
         name: str = raw.get("name", "")
         description: str = raw.get("description", "")
-        input_schema: dict[str, Any] = raw.get("inputSchema", raw.get("input_schema", {}))
-        output_schema: dict[str, Any] | None = raw.get("outputSchema", raw.get("output_schema", None))
+        input_schema: dict[str, object] = raw.get("inputSchema", raw.get("input_schema", {}))
+        output_schema: dict[str, object] | None = raw.get("outputSchema", raw.get("output_schema", None))
         tags: list[str] = raw.get("tags", [])
         if not isinstance(tags, list):
             tags = []
@@ -423,7 +422,7 @@ class MCPScanner:
         )
 
     @staticmethod
-    def _detect_auth_required(raw: dict[str, Any], input_schema: dict[str, Any]) -> bool:
+    def _detect_auth_required(raw: dict[str, object], input_schema: dict[str, object]) -> bool:
         """Return True when the tool definition implies authentication is needed."""
         # Explicit flag
         if raw.get("auth_required", False):

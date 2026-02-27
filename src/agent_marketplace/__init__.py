@@ -28,6 +28,8 @@ from __future__ import annotations
 
 __version__: str = "0.1.0"
 
+from agent_marketplace.convenience import Marketplace
+
 # ---------------------------------------------------------------------------
 # Schema
 # ---------------------------------------------------------------------------
@@ -101,8 +103,20 @@ from agent_marketplace.analytics.usage import UsageRecord, UsageTracker
 # ---------------------------------------------------------------------------
 from agent_marketplace.plugins.registry import PluginRegistry
 
+# ---------------------------------------------------------------------------
+# Catalog
+# ---------------------------------------------------------------------------
+from agent_marketplace.catalog import (
+    ToolAlreadyRegisteredError,
+    ToolCatalog,
+    ToolCatalogError,
+    ToolEntry,
+    ToolNotFoundError,
+)
+
 __all__ = [
     "__version__",
+    "Marketplace",
     # Schema
     "AgentCapability",
     "CapabilityCategory",
@@ -151,4 +165,10 @@ __all__ = [
     "UsageTracker",
     # Plugins
     "PluginRegistry",
+    # Catalog
+    "ToolAlreadyRegisteredError",
+    "ToolCatalog",
+    "ToolCatalogError",
+    "ToolEntry",
+    "ToolNotFoundError",
 ]

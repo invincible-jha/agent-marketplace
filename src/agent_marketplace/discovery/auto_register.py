@@ -28,7 +28,6 @@ import json
 from dataclasses import asdict, dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any
 
 from agent_marketplace.discovery.mcp_scanner import MCPScanner, MCPServerInfo, MCPToolDefinition
 
@@ -68,7 +67,7 @@ class CapabilityRegistration:
     tool_name: str
     category: str
     description: str
-    input_schema: dict[str, Any]
+    input_schema: dict[str, object]
     registered_at: datetime
     quality_score: float = 0.0
 
@@ -221,7 +220,7 @@ class AutoRegistrar:
         """
         raw = Path(path).read_text(encoding="utf-8")
         try:
-            data: list[dict[str, Any]] = json.loads(raw)
+            data: list[dict[str, object]] = json.loads(raw)
         except json.JSONDecodeError as exc:
             raise ValueError(f"Cannot parse registry file {path}: {exc}") from exc
 
@@ -308,7 +307,7 @@ class AutoRegistrar:
         return hashlib.sha256(raw.encode()).hexdigest()[:16]
 
     @staticmethod
-    def _registration_to_dict(reg: CapabilityRegistration) -> dict[str, Any]:
+    def _registration_to_dict(reg: CapabilityRegistration) -> dict[str, object]:
         """Serialise a registration to a JSON-safe dict."""
         return {
             "capability_id": reg.capability_id,
@@ -322,7 +321,7 @@ class AutoRegistrar:
         }
 
     @staticmethod
-    def _dict_to_registration(data: dict[str, Any]) -> CapabilityRegistration:
+    def _dict_to_registration(data: dict[str, object]) -> CapabilityRegistration:
         """Deserialise a dict (from JSON) into a ``CapabilityRegistration``."""
         try:
             registered_at = datetime.fromisoformat(data["registered_at"])
