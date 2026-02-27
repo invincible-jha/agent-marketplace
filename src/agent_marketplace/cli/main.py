@@ -428,6 +428,250 @@ def analytics_command(
 
 
 # ---------------------------------------------------------------------------
+# discover command group (Phase 6C — MCP capability discovery)
+# ---------------------------------------------------------------------------
+
+
+@cli.group(name="discover")
+def discover_group() -> None:
+    """MCP capability discovery commands.
+
+    Scan MCP server configuration files to extract, register, and list
+    tool capabilities without connecting to live servers.
+
+    Examples
+    --------
+    \\b
+      agent-marketplace discover scan --config ~/.config/claude/claude_desktop_config.json
+      agent-marketplace discover register --config config.json --output registry.json
+      agent-marketplace discover list --registry registry.json --category search
+    """
+
+
+@discover_group.command(name="scan")
+@click.option(
+    "--config",
+    "config_file",
+    required=True,
+    type=click.Path(exists=True, dir_okay=False, readable=True),
+    help="Path to a JSON/YAML MCP configuration file.",
+)
+@click.option("--json-output", is_flag=True, default=False, help="Output raw JSON.")
+def discover_scan_command(config_file: str, json_output: bool) -> None:
+    """Scan an MCP config file and display discovered capabilities.
+
+    CONFIG_FILE should be a Claude Desktop config, Cursor settings file,
+    or any JSON/YAML file with an ``mcpServers`` or ``servers`` key.
+
+    Examples
+    --------
+    \\b
+      agent-marketplace discover scan --config claude_desktop_config.json
+      agent-marketplace discover scan --config config.yaml --json-output
+    """
+    from pathlib import Path
+
+    from agent_marketplace.discovery.mcp_scanner import MCPScanner
+
+    scanner = MCPScanner()
+    try:
+        servers = scanner.scan_file(Path(config_file))
+    except (ValueError, FileNotFoundError) as exc:
+        console.print(f"[red]Failed to scan config:[/red] {exc}")
+        sys.exit(1)
+
+    if not servers:
+        console.print("[yellow]No MCP servers found in the config file.[/yellow]")
+        return
+
+    if json_output:
+        output: list[dict] = []
+        for server in servers:
+            caps = scanner.extract_capabilities(server)
+            output.append({
+                "server_name": server.server_name,
+                "transport": server.transport,
+                "version": server.version,
+                "tool_count": len(server.tools),
+                "capabilities": caps,
+            })
+        click.echo(json.dumps(output, indent=2, default=str))
+        return
+
+    for server in servers:
+        console.print(
+            f"\n[bold]{server.server_name}[/bold]  "
+            f"[dim]transport={server.transport}  version={server.version}[/dim]"
+        )
+        if not server.tools:
+            console.print("  [dim](no tools declared)[/dim]")
+            continue
+
+        table = Table(show_lines=False, box=None, padding=(0, 1))
+        table.add_column("Tool", style="bold")
+        table.add_column("Category")
+        table.add_column("Auth", justify="center")
+        table.add_column("Description")
+
+        for tool in server.tools:
+            category = scanner.categorize_tool(tool)
+            auth_marker = "[yellow]yes[/yellow]" if tool.auth_required else "[dim]no[/dim]"
+            desc = tool.description[:60] + "..." if len(tool.description) > 60 else tool.description
+            table.add_row(tool.name, category, auth_marker, desc or "[dim](none)[/dim]")
+
+        console.print(table)
+
+    total_tools = sum(len(s.tools) for s in servers)
+    console.print(
+        f"\n[green]Scanned {len(servers)} server(s), {total_tools} tool(s) total.[/green]"
+    )
+
+
+@discover_group.command(name="register")
+@click.option(
+    "--config",
+    "config_file",
+    required=True,
+    type=click.Path(exists=True, dir_okay=False, readable=True),
+    help="Path to a JSON/YAML MCP configuration file.",
+)
+@click.option(
+    "--output",
+    "output_file",
+    required=True,
+    type=click.Path(dir_okay=False, writable=True),
+    help="Destination path for the JSON capability registry.",
+)
+@click.option("--deduplicate", "do_dedup", is_flag=True, default=False, help="Remove duplicate registrations.")
+def discover_register_command(config_file: str, output_file: str, do_dedup: bool) -> None:
+    """Scan an MCP config file and write a capability registry to OUTPUT.
+
+    Examples
+    --------
+    \\b
+      agent-marketplace discover register --config config.json --output registry.json
+      agent-marketplace discover register --config config.json --output registry.json --deduplicate
+    """
+    from pathlib import Path
+
+    from agent_marketplace.discovery.auto_register import AutoRegistrar
+    from agent_marketplace.discovery.mcp_scanner import MCPScanner
+
+    scanner = MCPScanner()
+    try:
+        servers = scanner.scan_file(Path(config_file))
+    except (ValueError, FileNotFoundError) as exc:
+        console.print(f"[red]Failed to scan config:[/red] {exc}")
+        sys.exit(1)
+
+    registrar = AutoRegistrar(scanner)
+    registrations = registrar.register_all(servers)
+
+    if do_dedup:
+        before = len(registrations)
+        registrations = AutoRegistrar.deduplicate(registrations)
+        removed = before - len(registrations)
+        if removed:
+            console.print(f"[dim]Removed {removed} duplicate(s).[/dim]")
+
+    try:
+        registrar.export_registry(registrations, Path(output_file))
+    except OSError as exc:
+        console.print(f"[red]Failed to write registry:[/red] {exc}")
+        sys.exit(1)
+
+    console.print(
+        f"[green]Registered {len(registrations)} capability(-ies) from "
+        f"{len(servers)} server(s) → {output_file}[/green]"
+    )
+
+
+@discover_group.command(name="list")
+@click.option(
+    "--registry",
+    "registry_file",
+    required=True,
+    type=click.Path(exists=True, dir_okay=False, readable=True),
+    help="Path to a registry JSON file (written by 'register').",
+)
+@click.option(
+    "--category",
+    "category_filter",
+    default="",
+    show_default=True,
+    help="Only show capabilities with this category.",
+)
+@click.option("--json-output", is_flag=True, default=False, help="Output raw JSON.")
+def discover_list_command(registry_file: str, category_filter: str, json_output: bool) -> None:
+    """List capabilities stored in a registry file.
+
+    Examples
+    --------
+    \\b
+      agent-marketplace discover list --registry registry.json
+      agent-marketplace discover list --registry registry.json --category search
+      agent-marketplace discover list --registry registry.json --json-output
+    """
+    from pathlib import Path
+
+    from agent_marketplace.discovery.auto_register import AutoRegistrar
+
+    try:
+        registrations = AutoRegistrar.import_registry(Path(registry_file))
+    except (ValueError, FileNotFoundError) as exc:
+        console.print(f"[red]Failed to load registry:[/red] {exc}")
+        sys.exit(1)
+
+    if category_filter:
+        registrations = [r for r in registrations if r.category == category_filter]
+
+    if not registrations:
+        console.print("[yellow]No capabilities found (registry is empty or filter matched nothing).[/yellow]")
+        return
+
+    if json_output:
+        from dataclasses import asdict
+        output = []
+        for reg in registrations:
+            d = {
+                "capability_id": reg.capability_id,
+                "source_server": reg.source_server,
+                "tool_name": reg.tool_name,
+                "category": reg.category,
+                "description": reg.description,
+                "quality_score": reg.quality_score,
+                "registered_at": reg.registered_at.isoformat(),
+            }
+            output.append(d)
+        click.echo(json.dumps(output, indent=2))
+        return
+
+    table = Table(
+        title=f"Registered capabilities ({len(registrations)})",
+        show_lines=False,
+    )
+    table.add_column("ID", style="dim", no_wrap=True)
+    table.add_column("Server", style="bold")
+    table.add_column("Tool")
+    table.add_column("Category")
+    table.add_column("Quality", justify="right")
+    table.add_column("Description")
+
+    for reg in registrations:
+        desc = reg.description[:50] + "..." if len(reg.description) > 50 else reg.description
+        table.add_row(
+            reg.capability_id[:8],
+            reg.source_server,
+            reg.tool_name,
+            reg.category,
+            f"{reg.quality_score:.2f}",
+            desc or "[dim](none)[/dim]",
+        )
+
+    console.print(table)
+
+
+# ---------------------------------------------------------------------------
 # Internal helpers
 # ---------------------------------------------------------------------------
 
