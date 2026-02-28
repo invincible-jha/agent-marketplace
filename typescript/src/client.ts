@@ -294,11 +294,3 @@ export function createAgentMarketplaceClient(
   };
 }
 
-/** Re-export types for convenience. */
-export type {
-  CapabilitySchema,
-  AgentListing,
-  DiscoveryQuery,
-  MatchResult,
-  CapabilityValidation,
-};
