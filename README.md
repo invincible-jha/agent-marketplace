@@ -21,6 +21,14 @@ Part of the [AumOS](https://github.com/aumos-ai) open-source agent infrastructur
 - Import adapters for OpenAPI and AsyncAPI specs so existing API documentation can be ingested directly as capability registrations
 - REST API server (`server.api`) and health endpoint for embedding the marketplace as a sidecar service in larger agent deployments
 
+## Current Limitations
+
+> **Transparency note**: We list known limitations to help you evaluate fit.
+
+- **Search**: TF-IDF keyword matching only. No embedding/semantic search.
+- **Catalog**: Local in-memory catalog. No distributed registry.
+- **Discovery**: Basic MCP discovery — no A2A protocol support yet.
+
 ## Quick Start
 
 Install from PyPI:

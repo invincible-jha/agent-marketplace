@@ -1,0 +1,124 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Agent Marketplace Dashboard</title>
+  <link rel="stylesheet" href="/styles.css" />
+</head>
+<body>
+  <header>
+    <div class="logo">aumos <span>| marketplace</span></div>
+    <nav>
+      <button class="tab-btn active" data-tab="capabilities">Capabilities</button>
+      <button class="tab-btn" data-tab="agents">Agent Cards</button>
+      <button class="tab-btn" data-tab="analytics">Analytics</button>
+      <button class="tab-btn" data-tab="search">Search</button>
+    </nav>
+    <span class="refresh-info" id="last-refresh">Loading...</span>
+  </header>
+
+  <main>
+    <!-- Capabilities Tab -->
+    <div class="tab-panel active" id="tab-capabilities">
+      <div class="stats-row">
+        <div class="stat-card">
+          <div class="stat-label">Capabilities</div>
+          <div class="stat-value" id="qs-caps">-</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-label">Agents</div>
+          <div class="stat-value" id="qs-agents">-</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-label">Usage Events</div>
+          <div class="stat-value" id="qs-usage">-</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-label">Categories</div>
+          <div class="stat-value" id="qs-categories">-</div>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-title">Capability Registry</div>
+        <div class="search-row">
+          <select class="search-input" id="category-filter" style="max-width:180px">
+            <option value="">All Categories</option>
+          </select>
+          <input class="search-input" id="provider-filter" placeholder="Filter by provider..." style="max-width:220px" />
+          <button class="btn" onclick="loadCapabilities()">Filter</button>
+          <button class="btn btn-ghost" onclick="loadCapabilities()">Refresh</button>
+        </div>
+        <div style="overflow-x:auto">
+          <table>
+            <thead>
+              <tr>
+                <th>Name</th>
+                <th>Category</th>
+                <th>Provider</th>
+                <th>Version</th>
+                <th>Trust Score</th>
+                <th>Registered</th>
+              </tr>
+            </thead>
+            <tbody id="capabilities-tbody">
+              <tr><td colspan="6" class="empty-state">Loading...</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <!-- Agent Cards Tab -->
+    <div class="tab-panel" id="tab-agents">
+      <div class="card">
+        <div class="card-title">
+          Registered Agents
+          <button class="btn btn-ghost" onclick="loadAgents()" style="margin-left:auto;font-size:12px;padding:4px 10px">Refresh</button>
+        </div>
+        <div id="agents-grid" class="grid-3">
+          <div class="empty-state" style="grid-column:1/-1">Loading agents...</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Analytics Tab -->
+    <div class="tab-panel" id="tab-analytics">
+      <div class="grid-2">
+        <div class="card">
+          <div class="card-title">Usage by Capability (Top 10)</div>
+          <div class="chart-container">
+            <canvas id="usage-bar-chart"></canvas>
+          </div>
+        </div>
+        <div class="card">
+          <div class="card-title">Capabilities by Category</div>
+          <div class="chart-container">
+            <canvas id="category-pie-chart"></canvas>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Search Tab -->
+    <div class="tab-panel" id="tab-search">
+      <div class="card">
+        <div class="card-title">Search Capabilities</div>
+        <div class="search-row">
+          <input class="search-input" id="search-query" placeholder="Search by name, description, or tags..." />
+          <button class="btn" onclick="runSearch()">Search</button>
+        </div>
+        <div id="search-results-container">
+          <div class="empty-state"><div class="icon">&#128269;</div>Enter a query to search capabilities.</div>
+        </div>
+      </div>
+    </div>
+  </main>
+
+  <div id="toast-container"></div>
+
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+  <script src="/app.js"></script>
+</body>
+</html>

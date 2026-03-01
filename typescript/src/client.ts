@@ -1,8 +1,12 @@
 /**
  * HTTP client for the agent-marketplace capability registry API.
  *
- * Uses the Fetch API (available natively in Node 18+, browsers, and Deno).
- * No external dependencies required.
+ * Delegates all HTTP transport to `@aumos/sdk-core` which provides
+ * automatic retry with exponential back-off, timeout management via
+ * `AbortSignal.timeout`, interceptor support, and a typed error hierarchy.
+ *
+ * The public-facing `ApiResult<T>` envelope is preserved for full
+ * backward compatibility with existing callers.
  *
  * @example
  * ```ts
@@ -21,9 +25,17 @@
  * ```
  */
 
+import {
+  createHttpClient,
+  HttpError,
+  NetworkError,
+  TimeoutError,
+  AumosError,
+  type HttpClient,
+} from "@aumos/sdk-core";
+
 import type {
   AgentListing,
-  ApiError,
   ApiResult,
   CapabilitySchema,
   CapabilityValidation,
@@ -46,55 +58,51 @@ export interface AgentMarketplaceClientConfig {
 }
 
 // ---------------------------------------------------------------------------
-// Internal helpers
+// Internal adapter
 // ---------------------------------------------------------------------------
 
-async function fetchJson<T>(
-  url: string,
-  init: RequestInit,
-  timeoutMs: number,
+async function callApi<T>(
+  operation: () => Promise<{ readonly data: T; readonly status: number }>,
 ): Promise<ApiResult<T>> {
-  const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
-
   try {
-    const response = await fetch(url, { ...init, signal: controller.signal });
-    clearTimeout(timeoutId);
-
-    const body = await response.json() as unknown;
-
-    if (!response.ok) {
-      const errorBody = body as Partial<ApiError>;
+    const response = await operation();
+    return { ok: true, data: response.data };
+  } catch (error: unknown) {
+    if (error instanceof HttpError) {
       return {
         ok: false,
-        error: {
-          error: errorBody.error ?? "Unknown error",
-          detail: errorBody.detail ?? "",
-        },
-        status: response.status,
+        error: { error: error.message, detail: String(error.body ?? "") },
+        status: error.statusCode,
       };
     }
-
-    return { ok: true, data: body as T };
-  } catch (err: unknown) {
-    clearTimeout(timeoutId);
-    const message = err instanceof Error ? err.message : String(err);
+    if (error instanceof TimeoutError) {
+      return {
+        ok: false,
+        error: { error: "Request timed out", detail: error.message },
+        status: 0,
+      };
+    }
+    if (error instanceof NetworkError) {
+      return {
+        ok: false,
+        error: { error: "Network error", detail: error.message },
+        status: 0,
+      };
+    }
+    if (error instanceof AumosError) {
+      return {
+        ok: false,
+        error: { error: error.code, detail: error.message },
+        status: error.statusCode ?? 0,
+      };
+    }
+    const message = error instanceof Error ? error.message : String(error);
     return {
       ok: false,
-      error: { error: "Network error", detail: message },
+      error: { error: "Unexpected error", detail: message },
       status: 0,
     };
   }
-}
-
-function buildHeaders(
-  extraHeaders: Readonly<Record<string, string>> | undefined,
-): Record<string, string> {
-  return {
-    "Content-Type": "application/json",
-    Accept: "application/json",
-    ...extraHeaders,
-  };
 }
 
 // ---------------------------------------------------------------------------
@@ -123,9 +131,6 @@ export interface AgentMarketplaceClient {
 
   /**
    * Match a structured capability request against all registered capabilities.
-   *
-   * Returns results ranked by composite match score (capability overlap,
-   * latency fitness, trust level, cost fitness).
    *
    * @param query - The discovery query specifying required capabilities and constraints.
    * @returns Array of MatchResult records sorted best-first by match_score.
@@ -186,111 +191,65 @@ export interface AgentMarketplaceClient {
 export function createAgentMarketplaceClient(
   config: AgentMarketplaceClientConfig,
 ): AgentMarketplaceClient {
-  const { baseUrl, timeoutMs = 30_000, headers: extraHeaders } = config;
-  const baseHeaders = buildHeaders(extraHeaders);
+  const http: HttpClient = createHttpClient({
+    baseUrl: config.baseUrl,
+    timeout: config.timeoutMs ?? 30_000,
+    defaultHeaders: config.headers,
+  });
 
   return {
-    async registerCapability(
+    registerCapability(
       capability: Omit<CapabilitySchema, "capability_id">,
     ): Promise<ApiResult<CapabilitySchema>> {
-      return fetchJson<CapabilitySchema>(
-        `${baseUrl}/capabilities`,
-        {
-          method: "POST",
-          headers: baseHeaders,
-          body: JSON.stringify(capability),
-        },
-        timeoutMs,
+      return callApi(() => http.post<CapabilitySchema>("/capabilities", capability));
+    },
+
+    discoverAgents(query?: DiscoveryQuery): Promise<ApiResult<readonly AgentListing[]>> {
+      return callApi(() =>
+        http.post<readonly AgentListing[]>("/discover", query ?? {}),
       );
     },
 
-    async discoverAgents(
-      query?: DiscoveryQuery,
-    ): Promise<ApiResult<readonly AgentListing[]>> {
-      return fetchJson<readonly AgentListing[]>(
-        `${baseUrl}/discover`,
-        {
-          method: "POST",
-          headers: baseHeaders,
-          body: JSON.stringify(query ?? {}),
-        },
-        timeoutMs,
-      );
+    matchCapabilities(query: DiscoveryQuery): Promise<ApiResult<readonly MatchResult[]>> {
+      return callApi(() => http.post<readonly MatchResult[]>("/match", query));
     },
 
-    async matchCapabilities(
-      query: DiscoveryQuery,
-    ): Promise<ApiResult<readonly MatchResult[]>> {
-      return fetchJson<readonly MatchResult[]>(
-        `${baseUrl}/match`,
-        {
-          method: "POST",
-          headers: baseHeaders,
-          body: JSON.stringify(query),
-        },
-        timeoutMs,
-      );
-    },
-
-    async validateCapability(
+    validateCapability(
       capability: Omit<CapabilitySchema, "capability_id">,
     ): Promise<ApiResult<CapabilityValidation>> {
-      return fetchJson<CapabilityValidation>(
-        `${baseUrl}/capabilities/validate`,
-        {
-          method: "POST",
-          headers: baseHeaders,
-          body: JSON.stringify(capability),
-        },
-        timeoutMs,
+      return callApi(() =>
+        http.post<CapabilityValidation>("/capabilities/validate", capability),
       );
     },
 
-    async getListings(options?: {
+    getListings(options?: {
       readonly namespace?: string;
       readonly category?: string;
       readonly limit?: number;
     }): Promise<ApiResult<readonly AgentListing[]>> {
-      const params = new URLSearchParams();
-      if (options?.namespace !== undefined) {
-        params.set("namespace", options.namespace);
-      }
-      if (options?.category !== undefined) {
-        params.set("category", options.category);
-      }
-      if (options?.limit !== undefined) {
-        params.set("limit", String(options.limit));
-      }
-      const queryString = params.toString();
-      const url = queryString
-        ? `${baseUrl}/listings?${queryString}`
-        : `${baseUrl}/listings`;
-      return fetchJson<readonly AgentListing[]>(
-        url,
-        { method: "GET", headers: baseHeaders },
-        timeoutMs,
+      const queryParams: Record<string, string> = {};
+      if (options?.namespace !== undefined) queryParams["namespace"] = options.namespace;
+      if (options?.category !== undefined) queryParams["category"] = options.category;
+      if (options?.limit !== undefined) queryParams["limit"] = String(options.limit);
+      return callApi(() =>
+        http.get<readonly AgentListing[]>("/listings", { queryParams }),
       );
     },
 
-    async getCapability(
-      capabilityId: string,
-    ): Promise<ApiResult<CapabilitySchema>> {
-      return fetchJson<CapabilitySchema>(
-        `${baseUrl}/capabilities/${encodeURIComponent(capabilityId)}`,
-        { method: "GET", headers: baseHeaders },
-        timeoutMs,
+    getCapability(capabilityId: string): Promise<ApiResult<CapabilitySchema>> {
+      return callApi(() =>
+        http.get<CapabilitySchema>(`/capabilities/${encodeURIComponent(capabilityId)}`),
       );
     },
 
-    async deregisterCapability(
+    deregisterCapability(
       capabilityId: string,
     ): Promise<ApiResult<Readonly<Record<string, never>>>> {
-      return fetchJson<Readonly<Record<string, never>>>(
-        `${baseUrl}/capabilities/${encodeURIComponent(capabilityId)}`,
-        { method: "DELETE", headers: baseHeaders },
-        timeoutMs,
+      return callApi(() =>
+        http.delete<Readonly<Record<string, never>>>(
+          `/capabilities/${encodeURIComponent(capabilityId)}`,
+        ),
       );
     },
   };
 }
-

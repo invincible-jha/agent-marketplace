@@ -114,6 +114,18 @@ from agent_marketplace.catalog import (
     ToolNotFoundError,
 )
 
+# ---------------------------------------------------------------------------
+# Semantic — embedding search (optional extras guarded inside the modules)
+# ---------------------------------------------------------------------------
+from agent_marketplace.semantic.embedding_backend import (
+    EmbeddingBackend,
+    SentenceTransformerEmbedder,
+)
+from agent_marketplace.semantic.vector_index import (
+    InMemoryCosineIndex,
+    SearchHit,
+)
+
 __all__ = [
     "__version__",
     "Marketplace",
@@ -171,4 +183,9 @@ __all__ = [
     "ToolCatalogError",
     "ToolEntry",
     "ToolNotFoundError",
+    # Semantic embedding search
+    "EmbeddingBackend",
+    "SentenceTransformerEmbedder",
+    "InMemoryCosineIndex",
+    "SearchHit",
 ]
